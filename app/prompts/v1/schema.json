@@ -1,0 +1,37 @@
+{
+  "components": [
+    {
+      "name": "string - component name",
+      "type": "string - one of: microservice, database, queue, load_balancer, gateway, cache, external_service, storage, monitoring, cdn",
+      "description": "string - what this component does",
+      "technology": "string - identified technology (e.g. PostgreSQL, Redis, RabbitMQ, Kong)"
+    }
+  ],
+  "connections": [
+    {
+      "source": "string - source component name",
+      "target": "string - target component name",
+      "protocol": "string - REST, gRPC, WebSocket, AMQP, TCP, etc.",
+      "description": "string - purpose of this connection"
+    }
+  ],
+  "risks": [
+    {
+      "severity": "string - critical, high, medium, or low",
+      "category": "string - scalability, security, reliability, or maintainability",
+      "title": "string - short risk title",
+      "description": "string - detailed explanation",
+      "recommendation": "string - how to mitigate this risk"
+    }
+  ],
+  "recommendations": [
+    "string - actionable recommendation"
+  ],
+  "scores": {
+    "scalability": "number 0-10",
+    "security": "number 0-10",
+    "reliability": "number 0-10",
+    "maintainability": "number 0-10",
+    "overall": "number 0-10"
+  }
+}

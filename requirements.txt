@@ -1,0 +1,45 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# AI Providers
+openai==1.58.1
+google-generativeai==0.8.4
+anthropic==0.40.0
+
+# Messaging
+aio-pika==9.5.4
+
+# Storage
+boto3==1.36.4
+aioboto3==13.3.0
+
+# Cache
+redis[hiredis]==5.2.1
+
+# Observability
+opentelemetry-api==1.29.0
+opentelemetry-sdk==1.29.0
+opentelemetry-exporter-otlp==1.29.0
+opentelemetry-instrumentation-fastapi==0.50b0
+opentelemetry-instrumentation-aio-pika==0.50b0
+structlog==24.4.0
+
+# Processing
+Pillow==11.1.0
+pdf2image==1.17.0
+python-Levenshtein==0.26.1
+
+# Resilience
+tenacity==9.0.0
+
+# Utils
+python-dotenv==1.0.1
+httpx==0.28.1
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.25.0
+pytest-cov==6.0.0
+respx==0.22.0
