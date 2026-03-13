@@ -19,8 +19,11 @@ class ProviderRegistry:
         settings = get_settings()
 
         if settings.openai_api_key:
-            self._providers.append(OpenAIProvider())
-            logger.info("Registered AI provider", provider="openai")
+            self._providers.append(OpenAIProvider(provider_name="openai-gpt4o", model="gpt-4o", weight=1.0))
+            logger.info("Registered AI provider", provider="openai-gpt4o", model="gpt-4o")
+
+            self._providers.append(OpenAIProvider(provider_name="openai-gpt4o-mini", model="gpt-4o-mini", weight=0.8))
+            logger.info("Registered AI provider", provider="openai-gpt4o-mini", model="gpt-4o-mini")
 
         if settings.google_ai_api_key:
             self._providers.append(GeminiProvider())
