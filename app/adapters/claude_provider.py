@@ -15,9 +15,11 @@ logger = structlog.get_logger()
 
 class ClaudeProvider(AIProviderPort):
 
-    def __init__(self):
+    def __init__(self, base_url: str = "", api_key: str = ""):
         settings = get_settings()
-        self._client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+        key = api_key or settings.anthropic_api_key
+        url = base_url or settings.anthropic_base_url
+        self._client = AsyncAnthropic(api_key=key, **({"base_url": url} if url else {}))
         self._model = "claude-sonnet-4-20250514"
 
     @property

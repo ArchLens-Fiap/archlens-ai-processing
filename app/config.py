@@ -11,8 +11,10 @@ class Settings(BaseSettings):
 
     # AI Providers
     openai_api_key: str = ""
+    openai_base_url: str = ""
     google_ai_api_key: str = ""
     anthropic_api_key: str = ""
+    anthropic_base_url: str = ""
 
     # RabbitMQ
     rabbitmq_host: str = "localhost"

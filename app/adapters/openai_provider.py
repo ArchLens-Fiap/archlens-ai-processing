@@ -15,18 +15,22 @@ logger = structlog.get_logger()
 
 class OpenAIProvider(AIProviderPort):
 
-    def __init__(self):
+    def __init__(self, base_url: str = "", api_key: str = "", model: str = "gpt-4o", provider_name: str = "openai", weight: float = 1.0):
         settings = get_settings()
-        self._client = AsyncOpenAI(api_key=settings.openai_api_key)
-        self._model = "gpt-4o"
+        key = api_key or settings.openai_api_key
+        url = base_url or settings.openai_base_url
+        self._client = AsyncOpenAI(api_key=key, **({"base_url": url} if url else {}))
+        self._model = model
+        self._name = provider_name
+        self._weight = weight
 
     @property
     def name(self) -> str:
-        return "openai"
+        return self._name
 
     @property
     def weight(self) -> float:
-        return 1.0
+        return self._weight
 
     @retry(
         stop=stop_after_attempt(3),
@@ -61,7 +65,7 @@ class OpenAIProvider(AIProviderPort):
 
         raw = response.choices[0].message.content or "{}"
         parsed = self._parse_response(raw)
-        parsed.provider_name = self.name
+        parsed.provider_name = self._name
         parsed.raw_response = raw
         return parsed
 
@@ -95,4 +99,4 @@ class OpenAIProvider(AIProviderPort):
             return ProviderResponse.model_validate(data)
         except (json.JSONDecodeError, Exception) as e:
             logger.warning("Failed to parse OpenAI response", error=str(e))
-            return ProviderResponse(provider_name="openai", raw_response=raw)
+            return ProviderResponse(provider_name="openai-compatible", raw_response=raw)
