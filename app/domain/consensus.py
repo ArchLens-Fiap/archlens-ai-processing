@@ -14,8 +14,32 @@ from app.domain.models import (
 
 logger = structlog.get_logger()
 
-FUZZY_MATCH_THRESHOLD = 0.7
+FUZZY_MATCH_THRESHOLD = 0.65
 MIN_CONFIDENCE_THRESHOLD = 0.3
+
+
+def _normalize(name: str) -> str:
+    """Normalize component/risk names for better matching."""
+    n = name.lower().strip()
+    # Remove parenthetical details: "PostgreSQL (Accounts)" -> "postgresql"
+    if "(" in n:
+        n = n[:n.index("(")].strip()
+    # Remove common suffixes
+    for suffix in (" service", " svc", " server", " db", " cluster"):
+        if n.endswith(suffix):
+            n = n[: -len(suffix)].strip()
+    return n
+
+
+def _names_match(a: str, b: str) -> bool:
+    """Check if two names refer to the same entity."""
+    na, nb = _normalize(a), _normalize(b)
+    if na == nb:
+        return True
+    # One contains the other
+    if na in nb or nb in na:
+        return True
+    return levenshtein_ratio(na, nb) > FUZZY_MATCH_THRESHOLD
 
 
 class ConsensusEngine:
@@ -60,7 +84,7 @@ class ConsensusEngine:
             for comp in resp.components:
                 matched = False
                 for i, (existing, count) in enumerate(all_components):
-                    if self._components_match(comp, existing):
+                    if _names_match(comp.name, existing.name):
                         all_components[i] = (
                             self._pick_best_component(existing, comp),
                             count + 1,
@@ -77,15 +101,28 @@ class ConsensusEngine:
         ]
 
     def _merge_connections(self, responses: list[ProviderResponse]) -> list[Connection]:
-        seen: dict[str, Connection] = {}
+        seen: list[tuple[Connection, str]] = []
 
         for resp in responses:
             for conn in resp.connections:
-                key = f"{conn.source.lower()}|{conn.target.lower()}"
-                if key not in seen:
-                    seen[key] = conn
+                src = _normalize(conn.source)
+                tgt = _normalize(conn.target)
+                key = f"{src}|{tgt}"
+                is_dup = False
+                for _, existing_key in seen:
+                    if existing_key == key:
+                        is_dup = True
+                        break
+                    # Check reverse too
+                    parts = existing_key.split("|")
+                    if len(parts) == 2:
+                        if (_names_match(src, parts[0]) and _names_match(tgt, parts[1])):
+                            is_dup = True
+                            break
+                if not is_dup:
+                    seen.append((conn, key))
 
-        return list(seen.values())
+        return [conn for conn, _ in seen]
 
     def _merge_risks(self, responses: list[ProviderResponse]) -> list[Risk]:
         all_risks: list[tuple[Risk, int]] = []
@@ -150,7 +187,7 @@ class ConsensusEngine:
         for resp in responses:
             for comp in resp.components:
                 for merged in merged_components:
-                    if self._components_match(comp, merged):
+                    if _names_match(comp.name, merged.name):
                         component_counts[merged.name] += 1
                         break
 
@@ -158,21 +195,23 @@ class ConsensusEngine:
             return 0.3
 
         total = len(responses)
-        agreement_scores = [count / total for count in component_counts.values()]
-        return sum(agreement_scores) / len(agreement_scores)
-
-    @staticmethod
-    def _components_match(a: Component, b: Component) -> bool:
-        if a.name.lower() == b.name.lower():
-            return True
-        return levenshtein_ratio(a.name.lower(), b.name.lower()) > FUZZY_MATCH_THRESHOLD
+        agreement_scores = [min(count / total, 1.0) for count in component_counts.values()]
+        return min(sum(agreement_scores) / len(agreement_scores), 1.0)
 
     @staticmethod
     def _pick_best_component(a: Component, b: Component) -> Component:
-        return a if len(a.description) >= len(b.description) else b
+        # Prefer the one with more detail (longer description + name with parenthetical info)
+        a_score = len(a.description) + len(a.name) + len(a.technology)
+        b_score = len(b.description) + len(b.name) + len(b.technology)
+        return a if a_score >= b_score else b
 
     @staticmethod
     def _risks_match(a: Risk, b: Risk) -> bool:
-        if a.category != b.category:
-            return False
-        return levenshtein_ratio(a.title.lower(), b.title.lower()) > FUZZY_MATCH_THRESHOLD
+        # Match risks across categories too — title similarity is more important
+        title_sim = levenshtein_ratio(a.title.lower(), b.title.lower())
+        if title_sim > FUZZY_MATCH_THRESHOLD:
+            return True
+        # Also check if normalized titles match
+        if _names_match(a.title, b.title):
+            return True
+        return False

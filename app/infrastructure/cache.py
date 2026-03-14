@@ -26,5 +26,14 @@ class AnalysisCache:
         await self._redis.set(f"analysis:{file_hash}", json.dumps(result), ex=CACHE_TTL)
         logger.info("Cached analysis result", file_hash=file_hash, ttl=CACHE_TTL)
 
+    async def get_by_analysis(self, analysis_id: str) -> dict | None:
+        cached = await self._redis.get(f"analysis_result:{analysis_id}")
+        if cached:
+            return json.loads(cached)
+        return None
+
+    async def set_by_analysis(self, analysis_id: str, result: dict) -> None:
+        await self._redis.set(f"analysis_result:{analysis_id}", json.dumps(result), ex=CACHE_TTL)
+
     async def close(self) -> None:
         await self._redis.aclose()

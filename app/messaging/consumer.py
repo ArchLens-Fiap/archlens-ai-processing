@@ -83,6 +83,7 @@ async def start_consumer() -> aio_pika.abc.AbstractRobustConnection:
                     await cache.set(file_hash, result.model_dump())
 
                 result_json = _consensus_to_result_json(result)
+                await cache.set_by_analysis(analysis_id, result.model_dump())
 
                 await publisher.publish_analysis_completed(
                     analysis_id=analysis_id,

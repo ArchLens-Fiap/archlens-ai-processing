@@ -32,7 +32,7 @@ class Score(BaseModel):
 
 
 class ProviderResponse(BaseModel):
-    provider_name: str
+    provider_name: str = ""
     provider_weight: float = 1.0
     components: list[Component] = []
     connections: list[Connection] = []
