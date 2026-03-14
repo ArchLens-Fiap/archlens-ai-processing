@@ -17,7 +17,7 @@ class GeminiProvider(AIProviderPort):
     def __init__(self):
         settings = get_settings()
         genai.configure(api_key=settings.google_ai_api_key)
-        self._model = genai.GenerativeModel("gemini-2.0-flash")
+        self._model = genai.GenerativeModel("gemini-2.5-flash-lite")
 
     @property
     def name(self) -> str:
@@ -28,8 +28,8 @@ class GeminiProvider(AIProviderPort):
         return 0.9
 
     @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
+        stop=stop_after_attempt(1),
+        wait=wait_exponential(multiplier=1, min=1, max=5),
         retry=retry_if_exception_type(Exception),
         reraise=True,
     )
@@ -47,7 +47,7 @@ class GeminiProvider(AIProviderPort):
             [prompt, image_part],
             generation_config=genai.types.GenerationConfig(
                 temperature=0.2,
-                max_output_tokens=4096,
+                max_output_tokens=8192,
                 response_mime_type="application/json",
             ),
         )
@@ -83,6 +83,35 @@ class GeminiProvider(AIProviderPort):
     def _parse_response(raw: str) -> ProviderResponse:
         try:
             data = json.loads(raw)
+            # Coerce score values from strings to floats
+            if "scores" in data and isinstance(data["scores"], dict):
+                for key in ("scalability", "security", "reliability", "maintainability", "overall"):
+                    if key in data["scores"]:
+                        try:
+                            data["scores"][key] = float(data["scores"][key])
+                        except (ValueError, TypeError):
+                            data["scores"][key] = 5.0
+            # Ensure risk fields are strings
+            for risk in data.get("risks", []):
+                for field in ("severity", "category", "title", "description", "recommendation"):
+                    if field in risk and not isinstance(risk[field], str):
+                        risk[field] = str(risk.get(field, ""))
+                    elif field not in risk:
+                        risk[field] = ""
+            # Ensure component fields are strings
+            for comp in data.get("components", []):
+                for field in ("name", "type", "description", "technology"):
+                    if field in comp and not isinstance(comp[field], str):
+                        comp[field] = str(comp.get(field, ""))
+                    elif field not in comp:
+                        comp[field] = ""
+            # Ensure connection fields are strings
+            for conn in data.get("connections", []):
+                for field in ("source", "target", "protocol", "description"):
+                    if field in conn and not isinstance(conn[field], str):
+                        conn[field] = str(conn.get(field, ""))
+                    elif field not in conn:
+                        conn[field] = ""
             return ProviderResponse.model_validate(data)
         except (json.JSONDecodeError, Exception) as e:
             logger.warning("Failed to parse Gemini response", error=str(e))
