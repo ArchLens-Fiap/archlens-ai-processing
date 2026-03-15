@@ -2,6 +2,8 @@
 
 > **Microsserviço de Processamento de IA Multi-Provider com Motor de Consenso**
 > Hackathon FIAP - Fase 5 | Pós-Tech Software Architecture + IA para Devs
+>
+> **Autor:** Rafael Henrique Barbosa Pereira (RM366243)
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/Docker-Container-2496ED)](https://www.docker.com/)
@@ -10,15 +12,9 @@
 [![Redis](https://img.shields.io/badge/Redis-7.0-DC382D)](https://redis.io/)
 [![RabbitMQ](https://img.shields.io/badge/RabbitMQ-3.x-FF6600)](https://www.rabbitmq.com/)
 
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=ArchLens-Fiap_archlens-ai-processing&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=ArchLens-Fiap_archlens-ai-processing)
-[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=ArchLens-Fiap_archlens-ai-processing&metric=coverage)](https://sonarcloud.io/summary/new_code?id=ArchLens-Fiap_archlens-ai-processing)
-[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=ArchLens-Fiap_archlens-ai-processing&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=ArchLens-Fiap_archlens-ai-processing)
-[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=ArchLens-Fiap_archlens-ai-processing&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=ArchLens-Fiap_archlens-ai-processing)
-[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=ArchLens-Fiap_archlens-ai-processing&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=ArchLens-Fiap_archlens-ai-processing)
-
 ## 📋 Descrição
 
-O **AI Processing Service** é o microsserviço responsável pela análise arquitetural inteligente de diagramas e documentos. Utiliza **múltiplos provedores de IA** (OpenAI, Google Gemini, Anthropic Claude) com um **Motor de Consenso** que combina os resultados via fuzzy matching (Levenshtein), pontuação ponderada e deduplicação de componentes para produzir análises confiáveis. Inclui **cache por hash de arquivo** no Redis para evitar re-análises, **guardrails** de validação de schema e filtragem de limites, além de suporte a **chat de follow-up** contextual sobre análises existentes.
+O **AI Processing Service** é o microsserviço responsável pela análise arquitetural inteligente de diagramas e documentos. Utiliza **múltiplos provedores de IA** (OpenAI, Google Gemini) com um **Motor de Consenso** que combina os resultados via fuzzy matching (Levenshtein), pontuação ponderada e deduplicação de componentes para produzir análises confiáveis. Inclui **cache por hash de arquivo** no Redis para evitar re-análises, **guardrails** de validação de schema e filtragem de limites, além de suporte a **chat de follow-up** contextual sobre análises existentes.
 
 ## 🏗️ Arquitetura
 
@@ -47,7 +43,6 @@ graph TB
     subgraph "Driven Adapters (Output)"
         J[OpenAI Adapter]
         K[Google Gemini Adapter]
-        L[Anthropic Claude Adapter]
         M[Redis Cache]
         N[RabbitMQ Publisher]
         O[MinIO Client]
@@ -61,7 +56,6 @@ graph TB
     D --> G
     C --> J
     C --> K
-    C --> L
     C --> M
     C --> N
     F --> O
@@ -77,7 +71,6 @@ sequenceDiagram
     participant MINIO as MinIO
     participant OAI as OpenAI GPT-4o
     participant GEM as Gemini 2.0 Flash
-    participant CLU as Claude Sonnet
     participant CE as Consensus Engine
 
     RMQ->>SVC: ProcessingStartedEvent
@@ -92,12 +85,10 @@ sequenceDiagram
         par Chamadas paralelas aos providers
             SVC->>OAI: Analisa diagrama
             SVC->>GEM: Analisa diagrama
-            SVC->>CLU: Analisa diagrama
         end
 
         OAI-->>SVC: Resultado (weight: 1.0)
         GEM-->>SVC: Resultado (weight: 1.0)
-        CLU-->>SVC: Resultado (weight: 1.0)
 
         SVC->>CE: Combina resultados
         Note over CE: Fuzzy matching (65%)
@@ -121,7 +112,6 @@ sequenceDiagram
 | Pydantic | 2.x | Validação de modelos |
 | OpenAI SDK | 1.x | Client para GPT-4o / GPT-4o Mini |
 | Google GenAI | 0.x | Client para Gemini 2.0 Flash |
-| Anthropic SDK | 0.x | Client para Claude Sonnet |
 | python-Levenshtein | 0.x | Fuzzy matching para consenso |
 | Redis (aioredis) | 7+ | Cache de análises por file hash |
 | aio-pika | 9.x | Client async para RabbitMQ |
@@ -146,8 +136,6 @@ graph LR
 
     AI -.->|API| OAI[OpenAI]
     AI -.->|API| GEM[Google Gemini]
-    AI -.->|API| CLU[Anthropic Claude]
-
     style REDIS fill:#dc382d,color:#fff
     style MINIO fill:#c72c48,color:#fff
     style RMQ fill:#ff6600,color:#fff
@@ -173,8 +161,7 @@ archlens-ai-processing/
 │   │   └── outbound/
 │   │       ├── providers/                  # AI Provider adapters
 │   │       │   ├── openai_provider.py      # GPT-4o + GPT-4o Mini
-│   │       │   ├── gemini_provider.py      # Gemini 2.0 Flash
-│   │       │   └── anthropic_provider.py   # Claude Sonnet
+│   │       │   └── gemini_provider.py      # Gemini 2.0 Flash
 │   │       ├── cache/                      # Redis cache adapter
 │   │       ├── storage/                    # MinIO adapter
 │   │       └── messaging/                  # RabbitMQ publisher
@@ -273,7 +260,6 @@ graph TB
         P1[GPT-4o<br/>weight: 1.0]
         P2[GPT-4o Mini<br/>weight: 0.8]
         P3[Gemini 2.0 Flash<br/>weight: 1.0]
-        P4[Claude Sonnet<br/>weight: 1.0]
     end
 
     subgraph "Consensus Engine"
@@ -290,7 +276,6 @@ graph TB
     P1 --> FM
     P2 --> FM
     P3 --> FM
-    P4 --> FM
 
     FM --> WS
     WS --> DD
@@ -305,7 +290,6 @@ graph TB
 | OpenAI | GPT-4o | 1.0 | 1º |
 | OpenAI | GPT-4o Mini | 0.8 | 2º |
 | Google | Gemini 2.0 Flash | 1.0 | 3º |
-| Anthropic | Claude Sonnet | 1.0 | 4º |
 
 ### Degradação Graceful (Fallback)
 
@@ -313,9 +297,8 @@ O sistema opera com **degradação graceful** — se provedores falham, o consen
 
 | Cenário | Providers ativos | Comportamento |
 |---------|-----------------|---------------|
-| Ideal | 4 | Consenso completo com alta confiança |
-| Parcial | 3 | Consenso com confiança reduzida |
-| Mínimo | 2 | Consenso mínimo viável |
+| Ideal | 3 | Consenso completo com alta confiança |
+| Parcial | 2 | Consenso com confiança reduzida |
 | Crítico | 1 | Resultado direto do provider (sem consenso) |
 | Falha total | 0 | `AnalysisFailedEvent` publicado |
 
@@ -358,7 +341,6 @@ pytest tests/integration/
 |----------|-----------|
 | `OPENAI_API_KEY` | Chave de API da OpenAI (GPT-4o / GPT-4o Mini) |
 | `GOOGLE_AI_API_KEY` | Chave de API do Google (Gemini 2.0 Flash) |
-| `ANTHROPIC_API_KEY` | Chave de API da Anthropic (Claude Sonnet) |
 | `REDIS_URL` | URL de conexão Redis (cache) |
 | `RABBITMQ_URL` | URL de conexão RabbitMQ |
 | `MINIO_ENDPOINT` | Endpoint do MinIO (object storage) |
@@ -389,7 +371,6 @@ Resposta:
     "openai_gpt4o": "available",
     "openai_gpt4o_mini": "available",
     "gemini_2_flash": "available",
-    "claude_sonnet": "available"
   },
   "redis": "connected",
   "rabbitmq": "connected",
@@ -449,6 +430,4 @@ graph LR
 
 ---
 
-**Autor:** Rafael Henrique Barbosa Pereira (RM366243)
-**Instituição:** FIAP - Pós-Tech Software Architecture + IA para Devs
-**Fase:** 5 - Hackathon (12SOAT + 6IADT)
+**Autor:** Rafael Henrique Barbosa Pereira (RM366243) | FIAP - Pós-Tech Software Architecture + IA para Devs | Fase 5 - Hackathon (12SOAT + 6IADT)
