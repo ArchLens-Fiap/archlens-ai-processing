@@ -72,25 +72,17 @@ class TestConsensusEngine:
 
 class TestComponentMatching:
     def test_exact_match(self):
-        assert ConsensusEngine._components_match(
-            Component(name="Redis", type="cache"),
-            Component(name="Redis", type="cache"),
-        )
+        from app.domain.consensus import _names_match
+        assert _names_match("Redis", "Redis")
 
     def test_case_insensitive_match(self):
-        assert ConsensusEngine._components_match(
-            Component(name="redis", type="cache"),
-            Component(name="Redis", type="cache"),
-        )
+        from app.domain.consensus import _names_match
+        assert _names_match("redis", "Redis")
 
     def test_fuzzy_match(self):
-        assert ConsensusEngine._components_match(
-            Component(name="User Service", type="microservice"),
-            Component(name="Users Service", type="microservice"),
-        )
+        from app.domain.consensus import _names_match
+        assert _names_match("User Service", "Users Service")
 
     def test_no_match(self):
-        assert not ConsensusEngine._components_match(
-            Component(name="Redis", type="cache"),
-            Component(name="PostgreSQL", type="database"),
-        )
+        from app.domain.consensus import _names_match
+        assert not _names_match("Redis", "PostgreSQL")

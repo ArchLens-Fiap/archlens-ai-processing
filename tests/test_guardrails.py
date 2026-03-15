@@ -23,11 +23,13 @@ class TestValidateProviderResponse:
         assert validate_provider_response(response) is False
 
     def test_scores_out_of_range_invalid(self):
+        # Build a response with out-of-range scores by bypassing Pydantic validation
+        score = Score.model_construct(scalability=11, security=5, reliability=5, maintainability=5, overall=5)
         response = ProviderResponse(
             provider_name="test",
             components=[Component(name="A", type="service")],
-            scores=Score(scalability=11, security=5, reliability=5, maintainability=5, overall=5),
         )
+        response.scores = score
         assert validate_provider_response(response) is False
 
 
