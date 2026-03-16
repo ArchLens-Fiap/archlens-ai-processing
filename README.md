@@ -1,5 +1,7 @@
 # ArchLens - AI Processing Service
 
+[![CI](https://github.com/ArchLens-Fiap/archlens-ai-processing/actions/workflows/ci.yml/badge.svg)](https://github.com/ArchLens-Fiap/archlens-ai-processing/actions/workflows/ci.yml) [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=ArchLens-Fiap_archlens-ai-processing&metric=alert_status)](https://sonarcloud.io/dashboard?id=ArchLens-Fiap_archlens-ai-processing) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=ArchLens-Fiap_archlens-ai-processing&metric=coverage)](https://sonarcloud.io/dashboard?id=ArchLens-Fiap_archlens-ai-processing)
+
 > **Microsserviço de Processamento de IA Multi-Provider com Motor de Consenso**
 > Hackathon FIAP - Fase 5 | Pós-Tech Software Architecture + IA para Devs
 >
