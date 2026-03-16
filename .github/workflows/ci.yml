@@ -12,6 +12,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: "3.12"
+  IMAGE_NAME: ghcr.io/archlens-fiap/archlens-ai-processing
 
 jobs:
   test:
@@ -80,13 +81,13 @@ jobs:
           file: Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
-            ghcr.io/${{ github.repository }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:latest
 
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ghcr.io/${{ github.repository }}:${{ github.sha }}
+          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
           format: table
           exit-code: 0
           severity: CRITICAL,HIGH
