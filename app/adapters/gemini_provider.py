@@ -83,7 +83,6 @@ class GeminiProvider(AIProviderPort):
     def _parse_response(raw: str) -> ProviderResponse:
         try:
             data = json.loads(raw)
-            # Coerce score values from strings to floats
             if "scores" in data and isinstance(data["scores"], dict):
                 for key in ("scalability", "security", "reliability", "maintainability", "overall"):
                     if key in data["scores"]:
@@ -91,21 +90,18 @@ class GeminiProvider(AIProviderPort):
                             data["scores"][key] = float(data["scores"][key])
                         except (ValueError, TypeError):
                             data["scores"][key] = 5.0
-            # Ensure risk fields are strings
             for risk in data.get("risks", []):
                 for field in ("severity", "category", "title", "description", "recommendation"):
                     if field in risk and not isinstance(risk[field], str):
                         risk[field] = str(risk.get(field, ""))
                     elif field not in risk:
                         risk[field] = ""
-            # Ensure component fields are strings
             for comp in data.get("components", []):
                 for field in ("name", "type", "description", "technology"):
                     if field in comp and not isinstance(comp[field], str):
                         comp[field] = str(comp.get(field, ""))
                     elif field not in comp:
                         comp[field] = ""
-            # Ensure connection fields are strings
             for conn in data.get("connections", []):
                 for field in ("source", "target", "protocol", "description"):
                     if field in conn and not isinstance(conn[field], str):
