@@ -9,37 +9,31 @@ class Settings(BaseSettings):
     environment: str = "development"
     debug: bool = False
 
-    # AI Providers
     openai_api_key: str = ""
     openai_base_url: str = ""
     google_ai_api_key: str = ""
     anthropic_api_key: str = ""
     anthropic_base_url: str = ""
 
-    # RabbitMQ
     rabbitmq_host: str = "localhost"
     rabbitmq_port: int = 5672
     rabbitmq_user: str = "archlens"
     rabbitmq_password: str = "archlens_dev_2026"
 
-    # MinIO
     minio_endpoint: str = "localhost:9000"
     minio_access_key: str = "archlens"
     minio_secret_key: str = "archlens_dev_2026"
     minio_bucket: str = "archlens-diagrams"
     minio_use_ssl: bool = False
 
-    # Redis
     redis_host: str = "localhost"
     redis_port: int = 6379
     redis_password: str = "archlens_dev_2026"
     redis_db: int = 0
 
-    # OpenTelemetry
     otel_exporter_otlp_endpoint: str = "http://localhost:4317"
     otel_service_name: str = "archlens-ai-processing"
 
-    # Frontend
     frontend_url: str = "http://localhost:3000"
 
     @property
