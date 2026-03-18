@@ -19,7 +19,7 @@ class OpenAIProvider(AIProviderPort):
         settings = get_settings()
         key = api_key or settings.openai_api_key
         url = base_url or settings.openai_base_url
-        self._client = AsyncOpenAI(api_key=key, **({"base_url": url} if url else {}))
+        self._client = AsyncOpenAI(api_key=key, timeout=30.0, **({"base_url": url} if url else {}))
         self._model = model
         self._name = provider_name
         self._weight = weight
@@ -69,11 +69,6 @@ class OpenAIProvider(AIProviderPort):
         parsed.raw_response = raw
         return parsed
 
-    @retry(
-        stop=stop_after_attempt(2),
-        wait=wait_exponential(multiplier=1, min=1, max=5),
-        reraise=True,
-    )
     async def chat(self, context: str, question: str, history: list[dict]) -> str:
         chat_prompt = load_prompt("chat")
 
