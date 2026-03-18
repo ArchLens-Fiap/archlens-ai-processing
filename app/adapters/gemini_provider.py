@@ -58,11 +58,6 @@ class GeminiProvider(AIProviderPort):
         parsed.raw_response = raw
         return parsed
 
-    @retry(
-        stop=stop_after_attempt(2),
-        wait=wait_exponential(multiplier=1, min=1, max=5),
-        reraise=True,
-    )
     async def chat(self, context: str, question: str, history: list[dict]) -> str:
         chat_prompt = load_prompt("chat")
 

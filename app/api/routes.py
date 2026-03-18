@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 from fastapi import APIRouter, UploadFile, File, HTTPException
@@ -112,12 +113,16 @@ async def chat_followup(
     provider = service.first_provider
 
     async def generate():
-        response = await provider.chat(
-            context=context,
-            question=q,
-            history=hist,
-        )
-        yield f"data: {json.dumps({'content': response})}\n\n"
+        try:
+            response = await asyncio.wait_for(
+                provider.chat(context=context, question=q, history=hist),
+                timeout=30.0,
+            )
+            yield f"data: {json.dumps({'content': response})}\n\n"
+        except asyncio.TimeoutError:
+            yield f"data: {json.dumps({'content': 'The AI took too long to respond. Please try a simpler question.'})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'content': f'Error: {str(e)}'})}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
