@@ -1,6 +1,7 @@
 import asyncio
 import json
 
+import structlog
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -9,6 +10,8 @@ from app.adapters.provider_registry import ProviderRegistry
 from app.domain.analysis_service import AnalysisService
 from app.domain.models import ConsensusResult
 from app.infrastructure.cache import AnalysisCache
+
+logger = structlog.get_logger()
 
 router = APIRouter()
 
@@ -110,19 +113,42 @@ async def chat_followup(
     cached_result = await cache.get_by_analysis(aid)
     context = _build_context(cached_result) if cached_result else f"Analysis ID: {aid} (no cached data available)"
 
-    provider = service.first_provider
+    providers = service.chat_provider_chain
 
-    async def generate():
-        try:
-            response = await asyncio.wait_for(
-                provider.chat(context=context, question=q, history=hist),
-                timeout=30.0,
-            )
+    return StreamingResponse(
+        _chat_with_fallback(providers, context, q, hist),
+        media_type="text/event-stream",
+    )
+
+
+_TIER_TIMEOUTS = [8.0, 10.0, 15.0]
+
+
+async def _try_chat_provider(provider, context: str, question: str, history: list[dict], tier_timeout: float) -> str | None:
+    """Try a single provider with a timeout. Returns the response or None on failure."""
+    try:
+        logger.info("Chat trying provider", provider=provider.name, timeout=tier_timeout)
+        async with asyncio.timeout(tier_timeout):
+            response = await provider.chat(context=context, question=question, history=history)
+        logger.info("Chat response from provider", provider=provider.name)
+        return response
+    except TimeoutError:
+        logger.warning("Chat provider timed out", provider=provider.name)
+        return None
+    except Exception as e:
+        logger.warning("Chat provider failed", provider=provider.name, error=str(e))
+        return None
+
+
+async def _chat_with_fallback(providers: list, context: str, question: str, history: list[dict]):
+    """Tiered fallback: try each provider with increasing timeouts."""
+    for i, provider in enumerate(providers):
+        timeout = _TIER_TIMEOUTS[i] if i < len(_TIER_TIMEOUTS) else _TIER_TIMEOUTS[-1]
+        response = await _try_chat_provider(provider, context, question, history, timeout)
+        if response is not None:
             yield f"data: {json.dumps({'content': response})}\n\n"
-        except asyncio.TimeoutError:
-            yield f"data: {json.dumps({'content': 'The AI took too long to respond. Please try a simpler question.'})}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'content': f'Error: {str(e)}'})}\n\n"
-        yield "data: [DONE]\n\n"
+            yield "data: [DONE]\n\n"
+            return
 
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    yield f"data: {json.dumps({'content': 'All AI providers are currently slow or unavailable. Please try again in a moment.'})}\n\n"
+    yield "data: [DONE]\n\n"
