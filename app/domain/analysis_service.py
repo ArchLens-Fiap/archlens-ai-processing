@@ -27,6 +27,21 @@ class AnalysisService:
         providers = self._registry.providers
         return providers[0] if providers else None
 
+    @property
+    def chat_provider(self):
+        """Returns the first fast provider (for backwards compat)."""
+        chain = self.chat_provider_chain
+        return chain[0] if chain else None
+
+    @property
+    def chat_provider_chain(self) -> list:
+        """Returns providers ordered for tiered fallback: fast first, then full models."""
+        providers = self._registry.providers
+        fast = [p for p in providers if "mini" in p.name]
+        medium = [p for p in providers if "gemini" in p.name]
+        slow = [p for p in providers if p not in fast and p not in medium]
+        return fast + medium + slow
+
     async def analyze(self, file_bytes: bytes, file_name: str) -> ConsensusResult:
         start = time.monotonic()
 
