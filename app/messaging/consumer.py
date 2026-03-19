@@ -11,6 +11,7 @@ from app.domain.models import ConsensusResult
 from app.domain.preprocessing import compute_file_hash
 from app.infrastructure.cache import AnalysisCache
 from app.infrastructure.storage import MinioStorage
+from app.infrastructure.vector_store import VectorStore
 from app.messaging.publisher import MassTransitPublisher
 
 logger = structlog.get_logger()
@@ -45,6 +46,7 @@ async def start_consumer() -> aio_pika.abc.AbstractRobustConnection:
     analysis_service = AnalysisService(registry)
     storage = MinioStorage()
     cache = AnalysisCache()
+    vector_store = VectorStore()
 
     connection = await aio_pika.connect_robust(settings.rabbitmq_url)
     publisher = MassTransitPublisher(connection)
@@ -84,6 +86,7 @@ async def start_consumer() -> aio_pika.abc.AbstractRobustConnection:
 
                 result_json = _consensus_to_result_json(result)
                 await cache.set_by_analysis(analysis_id, result.model_dump())
+                await vector_store.index_analysis(analysis_id, result.model_dump())
 
                 await publisher.publish_analysis_completed(
                     analysis_id=analysis_id,

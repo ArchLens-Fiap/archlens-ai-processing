@@ -10,6 +10,7 @@ from app.adapters.provider_registry import ProviderRegistry
 from app.domain.analysis_service import AnalysisService
 from app.domain.models import ConsensusResult
 from app.infrastructure.cache import AnalysisCache
+from app.infrastructure.vector_store import VectorStore
 
 logger = structlog.get_logger()
 
@@ -18,6 +19,7 @@ router = APIRouter()
 _registry = None
 _analysis_service = None
 _cache = None
+_vector_store = None
 
 
 def get_analysis_service() -> AnalysisService:
@@ -33,6 +35,13 @@ def get_cache() -> AnalysisCache:
     if _cache is None:
         _cache = AnalysisCache()
     return _cache
+
+
+def get_vector_store() -> VectorStore:
+    global _vector_store
+    if _vector_store is None:
+        _vector_store = VectorStore()
+    return _vector_store
 
 
 @router.get("/health")
@@ -109,9 +118,17 @@ async def chat_followup(
     if not service.has_providers:
         raise HTTPException(status_code=503, detail="No AI providers available")
 
-    cache = get_cache()
-    cached_result = await cache.get_by_analysis(aid)
-    context = _build_context(cached_result) if cached_result else f"Analysis ID: {aid} (no cached data available)"
+    # RAG: retrieve relevant chunks via vector similarity, fallback to full context
+    vs = get_vector_store()
+    rag_chunks = await vs.search(aid, q, top_k=5) if vs.available else []
+
+    if rag_chunks:
+        context = "Relevant analysis context:\n\n" + "\n\n".join(rag_chunks)
+        logger.info("Using RAG context", analysis_id=aid, chunks=len(rag_chunks))
+    else:
+        cache = get_cache()
+        cached_result = await cache.get_by_analysis(aid)
+        context = _build_context(cached_result) if cached_result else f"Analysis ID: {aid} (no cached data available)"
 
     providers = service.chat_provider_chain
 

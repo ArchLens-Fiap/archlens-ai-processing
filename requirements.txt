@@ -30,6 +30,7 @@ structlog==24.4.0
 Pillow==11.1.0
 pdf2image==1.17.0
 python-Levenshtein==0.26.1
+numpy>=1.26.0,<3.0
 
 # Resilience
 tenacity==9.0.0

@@ -205,10 +205,19 @@ class TestTieredFallback:
         assert any("All AI providers" in c for c in chunks)
 
 
+def _mock_vector_store(available=False, search_results=None):
+    """Create a mock VectorStore."""
+    vs = AsyncMock()
+    vs.available = available
+    vs.search.return_value = search_results or []
+    return vs
+
+
 class TestChatEndpoint:
+    @patch("app.api.routes.get_vector_store")
     @patch("app.api.routes.get_cache")
     @patch("app.api.routes.get_analysis_service")
-    def test_chat_missing_fields(self, mock_get_service, mock_get_cache):
+    def test_chat_missing_fields(self, mock_get_service, mock_get_cache, mock_get_vs):
         from app.main import app
         client = TestClient(app)
 
@@ -219,9 +228,10 @@ class TestChatEndpoint:
         response = client.post("/api/chat", json={})
         assert response.status_code == 422 or response.status_code == 400
 
+    @patch("app.api.routes.get_vector_store")
     @patch("app.api.routes.get_cache")
     @patch("app.api.routes.get_analysis_service")
-    def test_chat_no_providers(self, mock_get_service, mock_get_cache):
+    def test_chat_no_providers(self, mock_get_service, mock_get_cache, mock_get_vs):
         from app.main import app
         client = TestClient(app)
 
@@ -235,11 +245,14 @@ class TestChatEndpoint:
         })
         assert response.status_code == 503
 
+    @patch("app.api.routes.get_vector_store")
     @patch("app.api.routes.get_cache")
     @patch("app.api.routes.get_analysis_service")
-    def test_chat_success_with_cached_result(self, mock_get_service, mock_get_cache):
+    def test_chat_success_with_cached_result(self, mock_get_service, mock_get_cache, mock_get_vs):
         from app.main import app
         client = TestClient(app)
+
+        mock_get_vs.return_value = _mock_vector_store(available=False)
 
         mock_provider = AsyncMock()
         mock_provider.name = "openai-mini"
@@ -264,11 +277,14 @@ class TestChatEndpoint:
         assert response.status_code == 200
         assert "SPOF" in response.text
 
+    @patch("app.api.routes.get_vector_store")
     @patch("app.api.routes.get_cache")
     @patch("app.api.routes.get_analysis_service")
-    def test_chat_success_without_cached_result(self, mock_get_service, mock_get_cache):
+    def test_chat_success_without_cached_result(self, mock_get_service, mock_get_cache, mock_get_vs):
         from app.main import app
         client = TestClient(app)
+
+        mock_get_vs.return_value = _mock_vector_store(available=False)
 
         mock_provider = AsyncMock()
         mock_provider.name = "openai-mini"
@@ -289,11 +305,43 @@ class TestChatEndpoint:
         })
         assert response.status_code == 200
 
+    @patch("app.api.routes.get_vector_store")
     @patch("app.api.routes.get_cache")
     @patch("app.api.routes.get_analysis_service")
-    def test_chat_fallback_in_endpoint(self, mock_get_service, mock_get_cache):
+    def test_chat_uses_rag_when_available(self, mock_get_service, mock_get_cache, mock_get_vs):
         from app.main import app
         client = TestClient(app)
+
+        mock_get_vs.return_value = _mock_vector_store(
+            available=True,
+            search_results=["Risk: SPOF detected", "Component: API Gateway"],
+        )
+
+        mock_provider = AsyncMock()
+        mock_provider.name = "openai-mini"
+        mock_provider.chat.return_value = "Based on the risks..."
+
+        mock_service = MagicMock()
+        mock_service.has_providers = True
+        mock_service.chat_provider_chain = [mock_provider]
+        mock_get_service.return_value = mock_service
+
+        response = client.post("/api/chat", json={
+            "analysis_id": "abc123",
+            "question": "What are the risks?",
+        })
+        assert response.status_code == 200
+        # Cache should NOT have been called since RAG provided context
+        mock_get_cache.return_value.get_by_analysis.assert_not_called()
+
+    @patch("app.api.routes.get_vector_store")
+    @patch("app.api.routes.get_cache")
+    @patch("app.api.routes.get_analysis_service")
+    def test_chat_fallback_in_endpoint(self, mock_get_service, mock_get_cache, mock_get_vs):
+        from app.main import app
+        client = TestClient(app)
+
+        mock_get_vs.return_value = _mock_vector_store(available=False)
 
         p1 = AsyncMock()
         p1.name = "mini"
