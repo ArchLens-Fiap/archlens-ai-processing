@@ -37,9 +37,10 @@ class AnalysisService:
     def chat_provider_chain(self) -> list:
         """Returns providers ordered for tiered fallback: fast first, then full models."""
         providers = self._registry.providers
-        fast = [p for p in providers if "mini" in p.name]
+        fast = [p for p in providers if "mini" in p.name and "gemini" not in p.name]
         medium = [p for p in providers if "gemini" in p.name]
-        slow = [p for p in providers if p not in fast and p not in medium]
+        assigned = {p.name for p in fast} | {p.name for p in medium}
+        slow = [p for p in providers if p.name not in assigned]
         return fast + medium + slow
 
     async def analyze(self, file_bytes: bytes, file_name: str) -> ConsensusResult:

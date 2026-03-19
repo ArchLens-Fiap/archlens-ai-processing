@@ -1,3 +1,4 @@
+import asyncio
 import io
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -112,6 +113,98 @@ class TestAnalyzeEndpoint:
         assert data["confidence"] == 0.8
 
 
+class TestTieredFallback:
+    @pytest.mark.asyncio
+    async def test_try_chat_provider_success(self):
+        from app.api.routes import _try_chat_provider
+
+        provider = AsyncMock()
+        provider.name = "openai-mini"
+        provider.chat.return_value = "Hello!"
+
+        result = await _try_chat_provider(provider, "ctx", "question", [], 8.0)
+        assert result == "Hello!"
+
+    @pytest.mark.asyncio
+    async def test_try_chat_provider_timeout(self):
+        from app.api.routes import _try_chat_provider
+
+        provider = AsyncMock()
+        provider.name = "slow-provider"
+
+        async def slow_chat(**kwargs):
+            await asyncio.sleep(999)
+
+        provider.chat = slow_chat
+
+        result = await _try_chat_provider(provider, "ctx", "q", [], 0.01)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_try_chat_provider_exception(self):
+        from app.api.routes import _try_chat_provider
+
+        provider = AsyncMock()
+        provider.name = "broken"
+        provider.chat.side_effect = RuntimeError("API crash")
+
+        result = await _try_chat_provider(provider, "ctx", "q", [], 8.0)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_chat_with_fallback_first_succeeds(self):
+        from app.api.routes import _chat_with_fallback
+
+        p1 = AsyncMock()
+        p1.name = "mini"
+        p1.chat.return_value = "Fast response"
+
+        p2 = AsyncMock()
+        p2.name = "gemini"
+
+        chunks = [chunk async for chunk in _chat_with_fallback([p1, p2], "ctx", "q", [])]
+        assert any("Fast response" in c for c in chunks)
+        assert any("[DONE]" in c for c in chunks)
+        p2.chat.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_chat_with_fallback_first_fails_second_succeeds(self):
+        from app.api.routes import _chat_with_fallback
+
+        p1 = AsyncMock()
+        p1.name = "mini"
+        p1.chat.side_effect = RuntimeError("down")
+
+        p2 = AsyncMock()
+        p2.name = "gemini"
+        p2.chat.return_value = "Fallback response"
+
+        chunks = [chunk async for chunk in _chat_with_fallback([p1, p2], "ctx", "q", [])]
+        assert any("Fallback response" in c for c in chunks)
+
+    @pytest.mark.asyncio
+    async def test_chat_with_fallback_all_fail(self):
+        from app.api.routes import _chat_with_fallback
+
+        p1 = AsyncMock()
+        p1.name = "mini"
+        p1.chat.side_effect = RuntimeError("down")
+
+        p2 = AsyncMock()
+        p2.name = "gemini"
+        p2.chat.side_effect = RuntimeError("also down")
+
+        chunks = [chunk async for chunk in _chat_with_fallback([p1, p2], "ctx", "q", [])]
+        assert any("All AI providers" in c for c in chunks)
+
+    @pytest.mark.asyncio
+    async def test_chat_with_fallback_empty_providers(self):
+        from app.api.routes import _chat_with_fallback
+
+        chunks = [chunk async for chunk in _chat_with_fallback([], "ctx", "q", [])]
+        assert any("All AI providers" in c for c in chunks)
+
+
 class TestChatEndpoint:
     @patch("app.api.routes.get_cache")
     @patch("app.api.routes.get_analysis_service")
@@ -149,11 +242,12 @@ class TestChatEndpoint:
         client = TestClient(app)
 
         mock_provider = AsyncMock()
+        mock_provider.name = "openai-mini"
         mock_provider.chat.return_value = "The main risk is SPOF."
 
         mock_service = MagicMock()
         mock_service.has_providers = True
-        mock_service.first_provider = mock_provider
+        mock_service.chat_provider_chain = [mock_provider]
         mock_get_service.return_value = mock_service
 
         mock_cache = AsyncMock()
@@ -168,6 +262,7 @@ class TestChatEndpoint:
             "question": "What are the risks?",
         })
         assert response.status_code == 200
+        assert "SPOF" in response.text
 
     @patch("app.api.routes.get_cache")
     @patch("app.api.routes.get_analysis_service")
@@ -176,11 +271,12 @@ class TestChatEndpoint:
         client = TestClient(app)
 
         mock_provider = AsyncMock()
+        mock_provider.name = "openai-mini"
         mock_provider.chat.return_value = "I don't have analysis data."
 
         mock_service = MagicMock()
         mock_service.has_providers = True
-        mock_service.first_provider = mock_provider
+        mock_service.chat_provider_chain = [mock_provider]
         mock_get_service.return_value = mock_service
 
         mock_cache = AsyncMock()
@@ -192,3 +288,33 @@ class TestChatEndpoint:
             "question": "Explain the architecture",
         })
         assert response.status_code == 200
+
+    @patch("app.api.routes.get_cache")
+    @patch("app.api.routes.get_analysis_service")
+    def test_chat_fallback_in_endpoint(self, mock_get_service, mock_get_cache):
+        from app.main import app
+        client = TestClient(app)
+
+        p1 = AsyncMock()
+        p1.name = "mini"
+        p1.chat.side_effect = RuntimeError("down")
+
+        p2 = AsyncMock()
+        p2.name = "gemini"
+        p2.chat.return_value = "Gemini answered."
+
+        mock_service = MagicMock()
+        mock_service.has_providers = True
+        mock_service.chat_provider_chain = [p1, p2]
+        mock_get_service.return_value = mock_service
+
+        mock_cache = AsyncMock()
+        mock_cache.get_by_analysis.return_value = None
+        mock_get_cache.return_value = mock_cache
+
+        response = client.post("/api/chat", json={
+            "analysis_id": "abc",
+            "question": "test",
+        })
+        assert response.status_code == 200
+        assert "Gemini answered" in response.text

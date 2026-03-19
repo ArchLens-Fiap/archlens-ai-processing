@@ -184,6 +184,62 @@ class TestAnalysisServiceAnalyze:
         assert isinstance(result, ConsensusResult)
 
 
+class TestChatProviderChain:
+    def test_chain_orders_mini_first(self):
+        mini = _make_provider("openai-gpt4o-mini")
+        gemini = _make_provider("gemini")
+        gpt4 = _make_provider("openai-gpt4o")
+
+        registry = MagicMock()
+        registry.providers = [gpt4, gemini, mini]
+        service = AnalysisService(registry)
+
+        chain = service.chat_provider_chain
+        assert chain[0].name == "openai-gpt4o-mini"
+        assert chain[1].name == "gemini"
+        assert chain[2].name == "openai-gpt4o"
+
+    def test_chain_empty_providers(self):
+        registry = MagicMock()
+        registry.providers = []
+        service = AnalysisService(registry)
+        assert service.chat_provider_chain == []
+
+    def test_chain_no_fast_providers(self):
+        gpt4 = _make_provider("openai-gpt4o")
+        registry = MagicMock()
+        registry.providers = [gpt4]
+        service = AnalysisService(registry)
+
+        chain = service.chat_provider_chain
+        assert len(chain) == 1
+        assert chain[0].name == "openai-gpt4o"
+
+    def test_chat_provider_returns_first_in_chain(self):
+        mini = _make_provider("openai-gpt4o-mini")
+        gpt4 = _make_provider("openai-gpt4o")
+        registry = MagicMock()
+        registry.providers = [gpt4, mini]
+        service = AnalysisService(registry)
+        assert service.chat_provider.name == "openai-gpt4o-mini"
+
+    def test_chat_provider_returns_none_when_empty(self):
+        registry = MagicMock()
+        registry.providers = []
+        service = AnalysisService(registry)
+        assert service.chat_provider is None
+
+    def test_chain_with_only_gemini(self):
+        gemini = _make_provider("gemini")
+        registry = MagicMock()
+        registry.providers = [gemini]
+        service = AnalysisService(registry)
+
+        chain = service.chat_provider_chain
+        assert len(chain) == 1
+        assert chain[0].name == "gemini"
+
+
 class TestSafeAnalyze:
     @pytest.mark.asyncio
     async def test_safe_analyze_returns_none_on_timeout(self, sample_image_bytes):
