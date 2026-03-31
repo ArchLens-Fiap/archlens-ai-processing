@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 
 import structlog
 from fastapi import APIRouter, UploadFile, File, HTTPException
@@ -11,6 +12,7 @@ from app.domain.analysis_service import AnalysisService
 from app.domain.models import ConsensusResult
 from app.infrastructure.cache import AnalysisCache
 from app.infrastructure.vector_store import VectorStore
+from app.prompts.loader import load_prompt
 
 logger = structlog.get_logger()
 
@@ -181,3 +183,67 @@ async def _chat_with_fallback(providers: list, context: str, question: str, hist
 
     yield f"data: {json.dumps({'content': 'All AI providers are currently slow or unavailable. Please try again in a moment.'})}\n\n"
     yield "data: [DONE]\n\n"
+
+
+def _fix_mermaid_syntax(code: str) -> str:
+    """Fix common Mermaid syntax issues produced by LLMs."""
+    lines = []
+    for line in code.split("\n"):
+        # Fix labels with parentheses not wrapped in quotes: A[Text (stuff)] -> A["Text (stuff)"]
+        line = re.sub(
+            r'(\w+)\[([^\]"]*\([^\]]*\))\]',
+            r'\1["\2"]',
+            line,
+        )
+        # Remove classDef and ::: style references (unsupported in strict mode)
+        if line.strip().startswith("classDef ") or line.strip().startswith("style "):
+            continue
+        line = re.sub(r':::\w+', '', line)
+        lines.append(line)
+    return "\n".join(lines)
+
+
+class FixDiagramRequest(BaseModel):
+    analysis_id: str
+    diagram_name: str | None = None
+
+
+@router.post("/generate-fixed-diagram")
+async def generate_fixed_diagram(request: FixDiagramRequest):
+    service = get_analysis_service()
+    if not service.has_providers:
+        raise HTTPException(status_code=503, detail="No AI providers available")
+
+    cache = get_cache()
+    cached_result = await cache.get_by_analysis(request.analysis_id)
+    if not cached_result:
+        raise HTTPException(status_code=404, detail="Analysis not found in cache. Please re-analyze the diagram.")
+
+    context = _build_context(cached_result, request.diagram_name)
+    fix_prompt = load_prompt("fix-diagram")
+    question = f"{fix_prompt}\n\nAnalysis results:\n{context}"
+
+    providers = service.chat_provider_chain
+    for i, provider in enumerate(providers):
+        timeout = 30.0 if i == 0 else 45.0
+        try:
+            logger.info("Generating fixed diagram", provider=provider.name)
+            async with asyncio.timeout(timeout):
+                mermaid_code = await provider.chat(context="", question=question, history=[])
+            # Clean up response - extract only mermaid code
+            mermaid_code = mermaid_code.strip()
+            if "```mermaid" in mermaid_code:
+                mermaid_code = mermaid_code.split("```mermaid")[1].split("```")[0].strip()
+            elif "```" in mermaid_code:
+                mermaid_code = mermaid_code.split("```")[1].split("```")[0].strip()
+
+            # Fix common Mermaid syntax issues from LLMs
+            mermaid_code = _fix_mermaid_syntax(mermaid_code)
+
+            logger.info("Fixed diagram generated", provider=provider.name, length=len(mermaid_code))
+            return {"mermaid": mermaid_code, "provider": provider.name}
+        except Exception as e:
+            logger.warning("Fix diagram provider failed", provider=provider.name, error=str(e))
+            continue
+
+    raise HTTPException(status_code=503, detail="All providers failed to generate the fixed diagram")
