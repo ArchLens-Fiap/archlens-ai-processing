@@ -96,7 +96,7 @@ class AnalysisService:
             logger.info("Starting analysis", provider=provider.name)
             result = await asyncio.wait_for(
                 provider.analyze_diagram(image_bytes, file_name),
-                timeout=45.0,
+                timeout=90.0,
             )
             logger.info("Analysis succeeded", provider=provider.name)
             return result

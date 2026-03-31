@@ -64,12 +64,21 @@ async def analyze_diagram(file: UploadFile = File(...)):
     return result
 
 
-def _build_context(data: dict) -> str:
+def _build_context(data: dict, diagram_name: str | None = None) -> str:
     parts = []
+
+    if diagram_name:
+        parts.append(f"Diagram: {diagram_name}")
+
     components = data.get("components", [])
     if components:
-        names = [c.get("name", "?") for c in components[:20]]
-        parts.append(f"Components ({len(components)}): {', '.join(names)}")
+        comp_lines = [f"- {c.get('name', '?')} ({c.get('type', '?')}): {c.get('description', '')[:120]}" for c in components[:20]]
+        parts.append(f"Components ({len(components)}):\n" + "\n".join(comp_lines))
+
+    connections = data.get("connections", [])
+    if connections:
+        conn_lines = [f"- {c.get('source', '?')} -> {c.get('target', '?')} ({c.get('type', '?')}): {c.get('description', '')[:80]}" for c in connections[:15]]
+        parts.append(f"Connections ({len(connections)}):\n" + "\n".join(conn_lines))
 
     risks = data.get("risks", [])
     if risks:
@@ -99,6 +108,7 @@ class ChatRequest(BaseModel):
     analysis_id: str
     question: str
     history: list[dict] = []
+    diagram_name: str | None = None
 
 
 @router.post("/chat")
@@ -110,6 +120,7 @@ async def chat_followup(
     aid = request.analysis_id if request else analysis_id
     q = request.question if request else question
     hist = request.history if request else []
+    dname = request.diagram_name if request else None
 
     if not aid or not q:
         raise HTTPException(status_code=400, detail="analysis_id and question are required")
@@ -123,12 +134,13 @@ async def chat_followup(
     rag_chunks = await vs.search(aid, q, top_k=5) if vs.available else []
 
     if rag_chunks:
-        context = "Relevant analysis context:\n\n" + "\n\n".join(rag_chunks)
+        prefix = f"Diagram: {dname}\n\n" if dname else ""
+        context = prefix + "Relevant analysis context:\n\n" + "\n\n".join(rag_chunks)
         logger.info("Using RAG context", analysis_id=aid, chunks=len(rag_chunks))
     else:
         cache = get_cache()
         cached_result = await cache.get_by_analysis(aid)
-        context = _build_context(cached_result) if cached_result else f"Analysis ID: {aid} (no cached data available)"
+        context = _build_context(cached_result, dname) if cached_result else f"Analysis ID: {aid} (no cached data available)"
 
     providers = service.chat_provider_chain
 
