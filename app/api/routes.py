@@ -208,6 +208,9 @@ def _fix_mermaid_syntax(code: str) -> str:
             continue
         line = re.sub(r':::\w+', '', line)
 
+        # Sanitize arrow labels: remove parentheses inside |label| to avoid parse errors
+        line = re.sub(r'\|([^|]*)\|', lambda m: '|' + m.group(1).replace('(', '').replace(')', '') + '|', line)
+
         # Skip arrows that reference subgraph names as source or target
         stripped = line.strip()
         if "-->" in stripped:
