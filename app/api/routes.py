@@ -243,9 +243,11 @@ async def generate_fixed_diagram(request: FixDiagramRequest):
     fix_prompt = load_prompt("fix-diagram")
     question = f"{fix_prompt}\n\nAnalysis results:\n{context}"
 
-    providers = service.chat_provider_chain
-    for i, provider in enumerate(providers):
-        timeout = 30.0 if i == 0 else 45.0
+    # Prefer Gemini for diagram generation (cleaner Mermaid syntax)
+    all_providers = service.chat_provider_chain
+    gemini_first = sorted(all_providers, key=lambda p: 0 if "gemini" in p.name else 1)
+    for i, provider in enumerate(gemini_first):
+        timeout = 45.0
         try:
             logger.info("Generating fixed diagram", provider=provider.name)
             async with asyncio.timeout(timeout):
