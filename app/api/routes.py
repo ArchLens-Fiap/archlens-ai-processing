@@ -131,7 +131,6 @@ async def chat_followup(
     if not service.has_providers:
         raise HTTPException(status_code=503, detail="No AI providers available")
 
-    # RAG: retrieve relevant chunks via vector similarity, fallback to full context
     vs = get_vector_store()
     rag_chunks = await vs.search(aid, q, top_k=5) if vs.available else []
 
@@ -156,7 +155,6 @@ _TIER_TIMEOUTS = [8.0, 10.0, 15.0]
 
 
 async def _try_chat_provider(provider, context: str, question: str, history: list[dict], tier_timeout: float) -> str | None:
-    """Try a single provider with a timeout. Returns the response or None on failure."""
     try:
         logger.info("Chat trying provider", provider=provider.name, timeout=tier_timeout)
         async with asyncio.timeout(tier_timeout):
@@ -172,7 +170,6 @@ async def _try_chat_provider(provider, context: str, question: str, history: lis
 
 
 async def _chat_with_fallback(providers: list, context: str, question: str, history: list[dict]):
-    """Tiered fallback: try each provider with increasing timeouts."""
     for i, provider in enumerate(providers):
         timeout = _TIER_TIMEOUTS[i] if i < len(_TIER_TIMEOUTS) else _TIER_TIMEOUTS[-1]
         response = await _try_chat_provider(provider, context, question, history, timeout)
@@ -186,8 +183,6 @@ async def _chat_with_fallback(providers: list, context: str, question: str, hist
 
 
 def _fix_mermaid_syntax(code: str) -> str:
-    """Fix common Mermaid syntax issues produced by LLMs."""
-    # First pass: collect subgraph names
     subgraph_names: set[str] = set()
     for line in code.split("\n"):
         stripped = line.strip()
@@ -197,24 +192,19 @@ def _fix_mermaid_syntax(code: str) -> str:
 
     lines = []
     for line in code.split("\n"):
-        # Fix labels with parentheses not wrapped in quotes: A[Text (stuff)] -> A["Text (stuff)"]
         line = re.sub(
             r'(\w+)\[([^\]"]*\([^\]]*\))\]',
             r'\1["\2"]',
             line,
         )
-        # Remove classDef and ::: style references
         if line.strip().startswith("classDef ") or line.strip().startswith("style "):
             continue
         line = re.sub(r':::\w+', '', line)
 
-        # Sanitize arrow labels: remove parentheses inside |label| to avoid parse errors
         line = re.sub(r'\|([^|]*)\|', lambda m: '|' + m.group(1).replace('(', '').replace(')', '') + '|', line)
 
-        # Skip arrows that reference subgraph names as source or target
         stripped = line.strip()
         if "-->" in stripped:
-            # Extract source and target (before/after -->)
             parts = re.split(r'\s*-->', stripped, maxsplit=1)
             if len(parts) == 2:
                 source = parts[0].strip().split("|")[0].strip()
@@ -224,6 +214,23 @@ def _fix_mermaid_syntax(code: str) -> str:
 
         lines.append(line)
     return "\n".join(lines)
+
+
+def _validate_mermaid(code: str) -> bool:
+    lines = [l.strip() for l in code.strip().split("\n") if l.strip()]
+    if not lines:
+        return False
+    first = lines[0].lower()
+    if not any(first.startswith(d) for d in ("graph ", "flowchart ", "graph\t")):
+        return False
+    node_lines = [l for l in lines if "[" in l or "(" in l]
+    if len(node_lines) < 3:
+        return False
+    opens = sum(1 for l in lines if l.lower().startswith("subgraph "))
+    closes = sum(1 for l in lines if l.lower() == "end")
+    if opens != closes:
+        return False
+    return True
 
 
 class FixDiagramRequest(BaseModel):
@@ -246,29 +253,34 @@ async def generate_fixed_diagram(request: FixDiagramRequest):
     fix_prompt = load_prompt("fix-diagram")
     question = f"{fix_prompt}\n\nAnalysis results:\n{context}"
 
-    # Prefer Gemini for diagram generation (cleaner Mermaid syntax)
     all_providers = service.chat_provider_chain
-    gemini_first = sorted(all_providers, key=lambda p: 0 if "gemini" in p.name else 1)
-    for i, provider in enumerate(gemini_first):
+    priority = {"openai-gpt4o": 0, "gemini": 1, "openai-gpt4o-mini": 2}
+    gemini_first = sorted(all_providers, key=lambda p: priority.get(p.name, 9))
+    last_error = ""
+    for provider in gemini_first:
         timeout = 45.0
         try:
             logger.info("Generating fixed diagram", provider=provider.name)
             async with asyncio.timeout(timeout):
                 mermaid_code = await provider.chat(context="", question=question, history=[])
-            # Clean up response - extract only mermaid code
             mermaid_code = mermaid_code.strip()
             if "```mermaid" in mermaid_code:
                 mermaid_code = mermaid_code.split("```mermaid")[1].split("```")[0].strip()
             elif "```" in mermaid_code:
                 mermaid_code = mermaid_code.split("```")[1].split("```")[0].strip()
 
-            # Fix common Mermaid syntax issues from LLMs
             mermaid_code = _fix_mermaid_syntax(mermaid_code)
+
+            if not _validate_mermaid(mermaid_code):
+                logger.warning("Invalid mermaid from provider", provider=provider.name)
+                last_error = "Generated diagram had invalid syntax"
+                continue
 
             logger.info("Fixed diagram generated", provider=provider.name, length=len(mermaid_code))
             return {"mermaid": mermaid_code, "provider": provider.name}
         except Exception as e:
             logger.warning("Fix diagram provider failed", provider=provider.name, error=str(e))
+            last_error = str(e)
             continue
 
-    raise HTTPException(status_code=503, detail="All providers failed to generate the fixed diagram")
+    raise HTTPException(status_code=503, detail=f"All providers failed: {last_error}")
