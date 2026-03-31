@@ -187,6 +187,14 @@ async def _chat_with_fallback(providers: list, context: str, question: str, hist
 
 def _fix_mermaid_syntax(code: str) -> str:
     """Fix common Mermaid syntax issues produced by LLMs."""
+    # First pass: collect subgraph names
+    subgraph_names: set[str] = set()
+    for line in code.split("\n"):
+        stripped = line.strip()
+        if stripped.startswith("subgraph "):
+            name = stripped.split(" ", 1)[1].strip().strip('"')
+            subgraph_names.add(name)
+
     lines = []
     for line in code.split("\n"):
         # Fix labels with parentheses not wrapped in quotes: A[Text (stuff)] -> A["Text (stuff)"]
@@ -195,10 +203,22 @@ def _fix_mermaid_syntax(code: str) -> str:
             r'\1["\2"]',
             line,
         )
-        # Remove classDef and ::: style references (unsupported in strict mode)
+        # Remove classDef and ::: style references
         if line.strip().startswith("classDef ") or line.strip().startswith("style "):
             continue
         line = re.sub(r':::\w+', '', line)
+
+        # Skip arrows that reference subgraph names as source or target
+        stripped = line.strip()
+        if "-->" in stripped:
+            # Extract source and target (before/after -->)
+            parts = re.split(r'\s*-->', stripped, maxsplit=1)
+            if len(parts) == 2:
+                source = parts[0].strip().split("|")[0].strip()
+                target = parts[1].strip().split("|")[-1].strip()
+                if source in subgraph_names or target in subgraph_names:
+                    continue
+
         lines.append(line)
     return "\n".join(lines)
 
