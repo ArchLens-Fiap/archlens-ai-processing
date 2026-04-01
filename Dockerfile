@@ -1,4 +1,7 @@
 FROM python:3.12-slim AS base
+LABEL org.opencontainers.image.source="https://github.com/ArchLens-Fiap/archlens-ai-processing"
+LABEL org.opencontainers.image.title="ArchLens AI Processing"
+LABEL org.opencontainers.image.version="1.0.0"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     poppler-utils curl \
