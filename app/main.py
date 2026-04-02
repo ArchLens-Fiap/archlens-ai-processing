@@ -4,12 +4,39 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
+from opentelemetry import trace
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from app.api.routes import router as api_router
 from app.config import get_settings
 from app.messaging.consumer import start_consumer
 from app.telemetry import setup_telemetry
+
+
+def _add_otel_context(logger, method_name, event_dict):
+    span = trace.get_current_span()
+    ctx = span.get_span_context()
+    if ctx and ctx.is_valid:
+        event_dict["trace_id"] = format(ctx.trace_id, "032x")
+        event_dict["span_id"] = format(ctx.span_id, "016x")
+    return event_dict
+
+
+structlog.configure(
+    processors=[
+        structlog.contextvars.merge_contextvars,
+        structlog.stdlib.add_log_level,
+        _add_otel_context,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.processors.JSONRenderer(),
+    ],
+    wrapper_class=structlog.stdlib.BoundLogger,
+    context_class=dict,
+    logger_factory=structlog.PrintLoggerFactory(),
+    cache_logger_on_first_use=True,
+)
 
 logger = structlog.get_logger()
 

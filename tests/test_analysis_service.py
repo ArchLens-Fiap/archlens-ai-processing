@@ -121,7 +121,6 @@ class TestAnalysisServiceAnalyze:
         registry.providers = [provider]
         service = AnalysisService(registry)
 
-        # Patch timeout to be very short
         with patch("app.domain.analysis_service.asyncio.wait_for", side_effect=asyncio.TimeoutError):
             result = await service.analyze(sample_image_bytes, "diagram.png")
         assert result.confidence == 0.0
@@ -145,7 +144,6 @@ class TestAnalysisServiceAnalyze:
     @pytest.mark.asyncio
     async def test_analyze_invalid_response_filtered(self, sample_image_bytes):
         provider = _make_provider("openai")
-        # Return response with no components (invalid)
         provider.analyze_diagram.return_value = ProviderResponse(
             provider_name="openai",
             components=[],

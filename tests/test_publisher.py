@@ -91,5 +91,4 @@ class TestMassTransitPublisher:
         channel.declare_exchange.assert_called_once()
         call_args = channel.declare_exchange.call_args
         assert call_args[1].get("durable", call_args[0][2] if len(call_args[0]) > 2 else None) is True or True
-        # Verify exchange name contains the event type
         assert "AnalysisCompletedEvent" in call_args[0][0]

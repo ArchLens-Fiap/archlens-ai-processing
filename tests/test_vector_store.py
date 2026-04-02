@@ -61,13 +61,11 @@ class TestVectorStoreIndex:
         mock_settings.return_value = MagicMock(openai_api_key="sk-test", openai_base_url="", redis_url="redis://localhost")
         vs = VectorStore()
 
-        # Mock OpenAI embeddings
         mock_embedding_data = MagicMock()
         mock_embedding_data.data = [MagicMock(embedding=_fake_embedding(i)) for i in range(2)]
         vs._openai = AsyncMock()
         vs._openai.embeddings.create.return_value = mock_embedding_data
 
-        # Mock Redis pipeline
         mock_pipe = AsyncMock()
         vs._redis = AsyncMock()
         vs._redis.pipeline.return_value = mock_pipe
@@ -109,15 +107,13 @@ class TestVectorStoreSearch:
         mock_settings.return_value = MagicMock(openai_api_key="sk-test", openai_base_url="", redis_url="redis://localhost")
         vs = VectorStore()
 
-        # Mock query embedding
         query_vec = _fake_embedding(42)
         mock_response = MagicMock()
         mock_response.data = [MagicMock(embedding=query_vec)]
         vs._openai = AsyncMock()
         vs._openai.embeddings.create.return_value = mock_response
 
-        # Mock Redis scan with stored vectors
-        similar_vec = np.array(query_vec, dtype=np.float32)  # identical = perfect match
+        similar_vec = np.array(query_vec, dtype=np.float32)
         different_vec = np.array(_fake_embedding(99), dtype=np.float32)
 
         async def fake_scan_iter(match=None):

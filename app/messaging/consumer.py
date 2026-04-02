@@ -2,6 +2,8 @@ import json
 
 import aio_pika
 import structlog
+from opentelemetry import trace
+from opentelemetry.propagate import extract
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.adapters.provider_registry import ProviderRegistry
@@ -13,6 +15,8 @@ from app.infrastructure.cache import AnalysisCache
 from app.infrastructure.storage import MinioStorage
 from app.infrastructure.vector_store import VectorStore
 from app.messaging.publisher import MassTransitPublisher
+
+_tracer = trace.get_tracer(__name__)
 
 logger = structlog.get_logger()
 
@@ -62,55 +66,59 @@ async def start_consumer() -> aio_pika.abc.AbstractRobustConnection:
 
     async def on_message(message: aio_pika.abc.AbstractIncomingMessage) -> None:
         async with message.process():
-            envelope = json.loads(message.body.decode())
-            body = envelope.get("message", envelope)
+            carrier = dict(message.headers) if message.headers else {}
+            ctx = extract(carrier)
 
-            analysis_id = body.get("analysisId", "")
-            diagram_id = body.get("diagramId", "")
-            storage_path = body.get("storagePath", "")
+            with _tracer.start_as_current_span("process-analysis", context=ctx):
+                envelope = json.loads(message.body.decode())
+                body = envelope.get("message", envelope)
 
-            log = logger.bind(analysis_id=analysis_id, diagram_id=diagram_id)
-            log.info("Received ProcessingStartedEvent", storage_path=storage_path)
+                analysis_id = body.get("analysisId", "")
+                diagram_id = body.get("diagramId", "")
+                storage_path = body.get("storagePath", "")
 
-            try:
-                file_bytes = await storage.download(storage_path)
-                file_hash = compute_file_hash(file_bytes)
+                log = logger.bind(analysis_id=analysis_id, diagram_id=diagram_id)
+                log.info("Received ProcessingStartedEvent", storage_path=storage_path)
 
-                cached = await cache.get(file_hash)
-                if cached:
-                    log.info("Using cached result", file_hash=file_hash)
-                    result = ConsensusResult(**cached)
-                else:
-                    result = await _analyze_with_retry(analysis_service, file_bytes, storage_path)
-                    await cache.set(file_hash, result.model_dump())
+                try:
+                    file_bytes = await storage.download(storage_path)
+                    file_hash = compute_file_hash(file_bytes)
 
-                result_json = _consensus_to_result_json(result)
-                await cache.set_by_analysis(analysis_id, result.model_dump())
-                await vector_store.index_analysis(analysis_id, result.model_dump())
+                    cached = await cache.get(file_hash)
+                    if cached:
+                        log.info("Using cached result", file_hash=file_hash)
+                        result = ConsensusResult(**cached)
+                    else:
+                        result = await _analyze_with_retry(analysis_service, file_bytes, storage_path)
+                        await cache.set(file_hash, result.model_dump())
 
-                await publisher.publish_analysis_completed(
-                    analysis_id=analysis_id,
-                    diagram_id=diagram_id,
-                    result_json=result_json,
-                    providers_used=result.providers_used,
-                    processing_time_ms=result.processing_time_ms,
-                )
+                    result_json = _consensus_to_result_json(result)
+                    await cache.set_by_analysis(analysis_id, result.model_dump())
+                    await vector_store.index_analysis(analysis_id, result.model_dump())
 
-                log.info(
-                    "Analysis pipeline completed",
-                    providers=result.providers_used,
-                    confidence=result.confidence,
-                    elapsed_ms=result.processing_time_ms,
-                )
+                    await publisher.publish_analysis_completed(
+                        analysis_id=analysis_id,
+                        diagram_id=diagram_id,
+                        result_json=result_json,
+                        providers_used=result.providers_used,
+                        processing_time_ms=result.processing_time_ms,
+                    )
 
-            except Exception as exc:
-                log.error("Analysis pipeline failed", error=str(exc))
-                await publisher.publish_analysis_failed(
-                    analysis_id=analysis_id,
-                    diagram_id=diagram_id,
-                    error_message=str(exc),
-                    failed_providers=[p.name for p in registry.providers],
-                )
+                    log.info(
+                        "Analysis pipeline completed",
+                        providers=result.providers_used,
+                        confidence=result.confidence,
+                        elapsed_ms=result.processing_time_ms,
+                    )
+
+                except Exception as exc:
+                    log.error("Analysis pipeline failed", error=str(exc))
+                    await publisher.publish_analysis_failed(
+                        analysis_id=analysis_id,
+                        diagram_id=diagram_id,
+                        error_message=str(exc),
+                        failed_providers=[p.name for p in registry.providers],
+                    )
 
     await queue.consume(on_message)
     logger.info("RabbitMQ consumer started", queue=QUEUE_NAME, exchange=EXCHANGE_NAME)

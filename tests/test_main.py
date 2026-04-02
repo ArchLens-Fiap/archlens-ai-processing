@@ -8,7 +8,6 @@ class TestCreateApp:
     def test_app_has_api_prefix(self):
         from app.main import app
         client = TestClient(app)
-        # Health endpoint should work via /api prefix
         response = client.get("/api/health")
         assert response.status_code == 200
 
@@ -20,8 +19,7 @@ class TestCreateApp:
     def test_cors_middleware_configured(self):
         from app.main import app
         middleware_classes = [type(m).__name__ for m in app.user_middleware]
-        # CORSMiddleware is added
-        assert any("CORS" in str(m) for m in app.user_middleware) or True  # Middleware is present
+        assert any("CORS" in str(m) for m in app.user_middleware) or True
 
 
 class TestLifespan:

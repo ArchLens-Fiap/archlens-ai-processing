@@ -6,6 +6,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.aio_pika import AioPikaInstrumentor
 
 
 def setup_telemetry(app):
@@ -20,3 +21,4 @@ def setup_telemetry(app):
     trace.set_tracer_provider(provider)
 
     FastAPIInstrumentor.instrument_app(app)
+    AioPikaInstrumentor().instrument()

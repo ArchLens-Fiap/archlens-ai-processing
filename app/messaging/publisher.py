@@ -4,10 +4,17 @@ from datetime import datetime, timezone
 
 import aio_pika
 import structlog
+from opentelemetry.propagate import inject
 
 from app.config import get_settings
 
 logger = structlog.get_logger()
+
+
+def _inject_trace_headers() -> dict:
+    headers: dict[str, str] = {}
+    inject(headers)
+    return headers
 
 MT_NS = "ArchLens.Contracts.Events"
 
@@ -91,6 +98,7 @@ class MassTransitPublisher:
                 body=body,
                 content_type="application/vnd.masstransit+json",
                 delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+                headers=_inject_trace_headers(),
             ),
             routing_key="",
         )

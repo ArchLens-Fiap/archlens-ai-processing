@@ -91,7 +91,6 @@ class VectorStore:
 
         query_vec = np.array(query_embedding, dtype=np.float32)
 
-        # Scan for all chunks of this analysis
         pattern = f"{INDEX_PREFIX}{analysis_id}:*"
         scored: list[tuple[float, str]] = []
 
@@ -100,7 +99,6 @@ class VectorStore:
             if b"embedding" not in data or b"text" not in data:
                 continue
             stored_vec = np.frombuffer(data[b"embedding"], dtype=np.float32)
-            # Cosine similarity
             similarity = float(np.dot(query_vec, stored_vec) / (np.linalg.norm(query_vec) * np.linalg.norm(stored_vec) + 1e-10))
             scored.append((similarity, data[b"text"].decode()))
 
